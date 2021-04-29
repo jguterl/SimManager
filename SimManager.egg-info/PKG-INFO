@@ -1,0 +1,21 @@
+Metadata-Version: 2.1
+Name: SimManager
+Version: 0.2
+Summary: Utility to launcvh and monitor simulations locally or remotely with slurm
+Home-page: https://github.com/jguterl/SimulationManager/
+Author: J. Guterl
+Author-email: guterlj@fusion.gat.com
+License: UNKNOWN
+Description: UNKNOWN
+Keywords: sample,setuptools,development
+Platform: UNKNOWN
+Classifier: Development Status :: 4 - Beta
+Classifier: Topic :: Software Development
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.5
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3 :: Only
+Requires-Python: >=3.5, <4
+Description-Content-Type: text/markdown

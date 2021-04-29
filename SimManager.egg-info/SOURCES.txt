@@ -1,0 +1,6 @@
+README.md
+setup.py
+SimManager.egg-info/PKG-INFO
+SimManager.egg-info/SOURCES.txt
+SimManager.egg-info/dependency_links.txt
+SimManager.egg-info/top_level.txt
