@@ -21,7 +21,11 @@ import os
 from functools import reduce
 import itertools
 import shutil
-
+from Slurm import sbatch
+try:
+    import pyslurm
+except:
+    pass
 
 #from multiprocessing import Process
 
@@ -72,14 +76,42 @@ class SimulationManager():
         cls.Screen.addstr(0, 0, cls.DisplayOutput(TimeElapsed=TimeElapsed), curses.A_PROTECT)
         cls.Screen.refresh()
         cls.StopBatch()
+        
+    @classmethod
+    def SbatchRun(cls, Command=None, TimeOut=3, **kwargs):
+        print('Submitting slurm jobs for GITR simulations')
+        Tstart = time.time()
+        cls.Nprocess = len(cls.CurrentSimu)
+        TimeElapsed = 0
+        for S in cls.CurrentSimu:
+            S.StartSlurm(Command, **kwargs)
+        cls.Screen = curses.initscr()
+        cls.Screen.resize(len(cls.CurrentSimu)+10, 150)
+        curses.resizeterm(len(cls.CurrentSimu)+10, 150)
+        cls.Screen.clear()
+        cls.Screen.addstr(0, 0, cls.DisplayOutput(TimeElapsed=TimeElapsed), curses.A_PROTECT)
+        cls.Screen.refresh()
+        while True:
+            TimeElapsed = time.time()-Tstart
+            cls.Screen.clear()
+            cls.Screen.addstr(0, 0, cls.DisplayOutput(TimeElapsed=TimeElapsed), curses.A_PROTECT)
+            cls.Screen.refresh()
+            time.sleep(TimeOut)
+
 
     @classmethod
     def StopBatch(cls):
         for S in cls.CurrentSimu:
             S.Stop()
+    def CancelSbatch(cls):
+        for S in cls.CurrentSimu:
+            S.Stop()
 
     def LaunchBatch(self, *args, **kwargs):
         self.__class__.BatchRun(*args, **kwargs)
+    
+    def LaunchSbatch(self, *args, **kwargs):
+        self.__class__.SbatchRun(*args, **kwargs)
 
     @classmethod
     def CheckRunningSim(cls):
@@ -168,6 +200,7 @@ class Simulation():
         self.StartTime = None
         self.RunTime = 0
         self.Process = None
+        self.Slurm = None
         self.PipeR = None
         self.PipeW = None
         self.Status = 'Idle'
@@ -185,7 +218,7 @@ class Simulation():
         self.Id = self.SimulationManager.NSimu
         self.SimulationManager.CurrentSimu.append(self)
         self.SimulationManager.NSimu = self.SimulationManager.NSimu + 1
-
+        self.run_type = 'shell'
     @property
     def RunTime(self):
         if self.StartTime is not None:
@@ -243,27 +276,36 @@ class Simulation():
             return self.Output.split('\n')[-1]
 
     def GetStatus(self):
-        if self.Process is not None:
-            try:
-                s = self.Process.poll()
-                if s is None:
-                    self.Status = 'R'
-                else:
-                    self.Status = s
-            except:
-                self.Status = 'U'
-
+        if self.run_type == 'shell':
+            if self.Process is not None :
+                try:
+                    s = self.Process.poll()
+                    if s is None:
+                        self.Status = 'R'
+                    else:
+                        self.Status = s
+                except:
+                    self.Status = 'U'
+        elif self.run_type == 'slurm':
+            if self.Slurm is not None:
+                 try:
+                     self.Status = pyslurm.job().get()[self.Slurm['job_id']]['job_state']
+                 except:
+                     self.Status = 'U'
     def Stop(self):
         self.Output
         try:
             self.Process.terminate()
             self.Status
-            os.close(self.PipeW)
-            os.close(self.PipeR)
+            if self.run_type == 'shell':
+                os.close(self.PipeW)
+                os.close(self.PipeR)
         except:
             pass
+        
 
     def Start(self, Command=None, **kwargs):
+        self.run_type = 'shell'
         if Command is not None:
             self.Command = Command
         print('Starting simulation #{} ....)'.format(self.Id))
@@ -275,19 +317,57 @@ class Simulation():
                                         stdout=self.PipeW,
                                         stderr=self.PipeW,
                                         stdin=subprocess.PIPE,
-                                        cwd=self.Directory, **kwargs
+                                        cwd=self.Directory,
+                                        **kwargs
                                         )
+        self.StartTime = time.time()
+        
+    def StartSlurm(self, Command=None,**kwargs):
+        self.run_type = 'slurm'
+        if Command is not None:
+            self.Command = Command
+            
+        if kwargs.get('log_dir') is None: 
+            kwargs['log_dir'] = os.path.join(self.Directory,'logs')
+            
+        print('Starting simulation #{} ....)'.format(self.Id))
+
+        assert self.Command != [] , 'Cannot start simulation with empty command'
+
+        #(self.PipeR, self.PipeW) = os.pipe()
+        self.Slurm = sbatch(self.Command,
+                            chdir=self.Directory,
+                            e='%j.log',
+                            o='%j.log',
+                            **kwargs
+                            )
+        try:
+            self.PipeR = pyslurm.job().get()[self.Slurm.job_id]['std_out']
+        except:
+            self.PipeR = self.Slurm.slurm_kwargs['o']
         self.StartTime = time.time()
 
     def FlushOutput(self):
-        try:
-            buf = ''
-            if self.PipeR is not None:
-                while len(select.select([self.PipeR], [], [], 0)[0]) == 1:
-                    buf = buf+os.read(self.PipeR, 10024).decode()
-        except:
-            buf = 'Cannot read stdout'
-        return buf
+        if self.run_type == 'shell':
+            try:
+                buf = ''
+                if self.PipeR is not None:
+                    while len(select.select([self.PipeR], [], [], 0)[0]) == 1:
+                        buf = buf+os.read(self.PipeR, 10024).decode()
+            except:
+                buf = 'Cannot read stdout'
+            return buf
+        elif self.run_type == 'slurm':
+            try:
+                with open( self.PipeR, "r") as f:
+                    buf = f.readlines()[-1]
+            except:
+                buf = 'failed to read log file {}'.format(self.PipeR)
+            return buf
+        else:
+            raise ValueError()
+            
+            
 
 
 def UpdateInputFile(Dic:dict, LoadMethod, DumpMethod, AddParam=False, Verbose=False):
@@ -358,13 +438,15 @@ def CopyFolder(from_path, to_path, OverWrite=False, Verbose=False):
     if Verbose: print('Copying {} to {}'.format(from_path,to_path))
     if os.path.exists(to_path):
         if OverWrite:
-            shutil.rmtree(to_path)
+            shutil.rmtree(to_path, ignore_errors=True)
         else:
             print('Folder {} already exists. No copy made.'.format(to_path))
             return False
     try:
-
-        shutil.copytree(from_path, to_path)
+        try:
+            shutil.copytree(from_path, to_path, dirs_exist_ok=True)
+        except:
+            shutil.copytree(from_path, to_path)  
         if Verbose: print('Successful copy {} to {} '.format(from_path,to_path))
         return True
     except Exception as E:
