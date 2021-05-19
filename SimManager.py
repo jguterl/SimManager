@@ -78,7 +78,7 @@ class SimulationManager():
         cls.StopBatch()
         
     @classmethod
-    def SbatchRun(cls, Command=None, TimeOut=3, **kwargs):
+    def SbatchRun(cls, Command=None, TimeOut=3, Display=True, **kwargs):
         print('Submitting slurm jobs for GITR simulations')
         Tstart = time.time()
         cls.Nprocess = len(cls.CurrentSimu)
@@ -91,14 +91,22 @@ class SimulationManager():
         cls.Screen.clear()
         cls.Screen.addstr(0, 0, cls.DisplayOutput(TimeElapsed=TimeElapsed), curses.A_PROTECT)
         cls.Screen.refresh()
-        while True:
+        while True and Display:
             TimeElapsed = time.time()-Tstart
             cls.Screen.clear()
             cls.Screen.addstr(0, 0, cls.DisplayOutput(TimeElapsed=TimeElapsed), curses.A_PROTECT)
             cls.Screen.refresh()
             time.sleep(TimeOut)
 
-
+    @classmethod
+    def WatchJobs(cls):
+        cls.Screen = curses.initscr()
+        cls.Screen.resize(len(cls.CurrentSimu)+10, 150)
+        curses.resizeterm(len(cls.CurrentSimu)+10, 150)
+        cls.Screen.clear()
+        cls.Screen.addstr(0, 0, cls.DisplayOutput(0), curses.A_PROTECT)
+        cls.Screen.refresh()
+        
     @classmethod
     def StopBatch(cls):
         for S in cls.CurrentSimu:
